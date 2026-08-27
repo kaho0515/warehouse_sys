@@ -1,0 +1,1375 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>倉庫管理系統</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS for Excel/CSV import/export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- ZXing Library for QR/Barcode Scanner -->
+    <script src="https://unpkg.com/@zxing/library@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-neutral-950 text-slate-100 min-h-screen flex flex-col">
+
+    <header class="bg-neutral-900 border-b border-neutral-800 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-gradient-to-br from-slate-200 to-slate-400 p-2 rounded-lg text-black shadow-md">
+                    <i class="fa-solid fa-boxes-stacked text-xl"></i>
+                </div>
+                <h1 class="text-xl font-bold tracking-wide text-slate-100" id="app-title">倉庫管理系統</h1>
+            </div>
+            
+            <div class="flex items-center space-x-3">
+                <!-- Staff Name Display Container -->
+                <div id="staff-name-container" class="hidden items-center bg-neutral-800 px-3 py-1.5 rounded-lg border border-neutral-700 text-sm">
+                    <span class="text-slate-400 mr-2" id="lbl-staff-name">工作人員:</span>
+                    <span id="current-staff-display" class="font-semibold text-slate-200">未設定</span>
+                </div>
+
+                <!-- Working Location Display/Button -->
+                <div id="working-location-container" class="hidden items-center bg-neutral-800 px-3 py-1.5 rounded-lg border border-neutral-700 text-sm">
+                    <span class="text-slate-400 mr-2" id="lbl-working-loc">工作儲位:</span>
+                    <span id="current-location-display" class="font-semibold text-slate-200">未設定</span>
+                    <button onclick="openLocationModal()" class="ml-2 text-xs bg-neutral-700 hover:bg-neutral-600 text-slate-200 px-2 py-1 rounded transition">變更</button>
+                </div>
+
+                <!-- Language Toggle -->
+                <button onclick="toggleLanguage()" class="bg-neutral-800 hover:bg-neutral-700 px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-1.5 border border-neutral-700 text-slate-200">
+                    <i class="fa-solid fa-globe text-slate-400"></i>
+                    <span id="lang-btn-text">EN</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <nav class="bg-neutral-900/80 border-b border-neutral-800 backdrop-blur">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-2 py-3 overflow-x-auto">
+            <button onclick="switchMode('inbound')" id="nav-inbound" class="mode-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-gradient-to-r from-slate-100 to-slate-300 text-black shadow-lg shadow-slate-200/10 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-arrow-down-to-bracket"></i>
+                <span id="tab-inbound">入庫</span>
+            </button>
+            <button onclick="switchMode('inventory')" id="nav-inventory" class="mode-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-neutral-900 text-slate-400 hover:bg-neutral-800 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-clipboard-check"></i>
+                <span id="tab-inventory">盤點模式</span>
+            </button>
+            <button onclick="switchMode('scrap')" id="nav-scrap" class="mode-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-neutral-900 text-slate-400 hover:bg-neutral-800 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span id="tab-scrap">零件報廢</span>
+            </button>
+            <button onclick="switchMode('locationSearch')" id="nav-locationSearch" class="mode-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-neutral-900 text-slate-400 hover:bg-neutral-800 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-magnifying-glass-location"></i>
+                <span id="tab-locationSearch">儲位搜索</span>
+            </button>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full flex flex-col space-y-6">
+
+        <!-- INBOUND MODE CONTROLS -->
+        <div id="panel-inbound" class="space-y-4">
+            <div class="bg-neutral-900 border border-neutral-800 rounded-xl p-5 shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div class="flex items-center space-x-3">
+                    <div class="bg-neutral-800 p-3 rounded-lg border border-neutral-700 text-slate-300">
+                        <i class="fa-solid fa-file-arrow-down text-2xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-100" id="inbound-header-title">入庫清單匯入與管理</h2>
+                        <p class="text-xs text-slate-400" id="inbound-header-desc">支援匯入 Excel / CSV 檔或手動新增清單 (欄位: 零件號碼, 名稱, 車牌, 入庫數量)</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    <label class="bg-slate-200 hover:bg-white text-black px-4 py-2 rounded-lg text-sm font-medium transition flex items-center space-x-2 shadow cursor-pointer">
+                        <i class="fa-solid fa-file-excel"></i>
+                        <span id="btn-import-file">匯入 XLSX/CSV</span>
+                        <input type="file" id="inbound-file-input" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleInboundFileImport(event)">
+                    </label>
+                    <button onclick="openManualInboundModal()" class="bg-neutral-800 hover:bg-neutral-700 text-slate-200 border border-neutral-700 px-4 py-2 rounded-lg text-sm font-medium transition flex items-center space-x-2 shadow">
+                        <i class="fa-solid fa-plus"></i>
+                        <span id="btn-manual-add-list">手動新增清單</span>
+                    </button>
+                    <button onclick="exportInboundData()" class="bg-neutral-800 hover:bg-neutral-700 text-slate-200 border border-neutral-700 px-4 py-2 rounded-lg text-sm font-medium transition flex items-center space-x-2 shadow">
+                        <i class="fa-solid fa-file-export"></i>
+                        <span id="btn-export-file">匯出 CSV</span>
+                    </button>
+                    <button onclick="clearInboundData()" class="bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/50 px-3 py-2 rounded-lg text-sm font-medium transition">
+                        <i class="fa-solid fa-trash-can mr-1"></i> <span id="btn-clear-inbound">清除</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="panel-scan-input" class="bg-neutral-900 border border-neutral-800 rounded-xl p-5 shadow-xl">
+            <div class="flex flex-col md:flex-row gap-3 items-stretch">
+                <div class="relative flex-1">
+                    <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <i class="fa-solid fa-barcode text-lg"></i>
+                    </div>
+                    <input type="text" id="scan-input" 
+                           class="w-full pl-11 pr-4 py-3 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400 transition font-mono"
+                           placeholder="請輸入或掃描零件號碼..."
+                           onkeydown="handleScanInput(event)">
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="startScanner('input')" class="bg-neutral-800 hover:bg-neutral-700 text-slate-200 border border-neutral-700 font-medium px-4 py-3 rounded-xl transition flex items-center justify-center space-x-2 shadow whitespace-nowrap w-full md:w-auto">
+                        <i class="fa-solid fa-camera"></i>
+                        <span id="btn-camera-scan">相機掃描</span>
+                    </button>
+                    <button onclick="processManualScan()" class="bg-gradient-to-r from-slate-100 to-slate-300 hover:from-white hover:to-slate-200 text-black font-semibold px-6 py-3 rounded-xl transition flex items-center justify-center space-x-2 shadow-lg shadow-slate-200/10 whitespace-nowrap w-full md:w-auto">
+                        <i class="fa-solid fa-plus"></i>
+                        <span id="btn-add-record">加入 / 點算</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="panel-location-search" class="bg-neutral-900 border border-neutral-800 rounded-xl p-5 shadow-xl hidden space-y-4">
+            <div class="flex items-center space-x-3">
+                <div class="bg-neutral-800 p-3 rounded-lg border border-neutral-700 text-slate-300">
+                    <i class="fa-solid fa-magnifying-glass-location text-2xl"></i>
+                </div>
+                <div>
+                    <h2 class="text-lg font-bold text-slate-100" id="loc-search-header-title">儲位庫存搜索</h2>
+                    <p class="text-xs text-slate-400" id="loc-search-header-desc">輸入或掃描指定儲位，檢視該儲位內存放的所有零件與數量明細</p>
+                </div>
+            </div>
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                <div class="relative flex-1 w-full">
+                    <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <i class="fa-solid fa-location-dot text-lg"></i>
+                    </div>
+                    <input type="text" id="location-search-input" oninput="renderRecords()"
+                           class="w-full pl-11 pr-24 py-3 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 transition font-mono"
+                           placeholder="請輸入或掃描儲位名稱 (例如: A-01)...">
+                    <button onclick="startScanner('locationSearch')" class="absolute right-2 top-2 bottom-2 px-3 bg-neutral-800 hover:bg-neutral-700 text-slate-200 rounded-lg text-xs font-medium transition flex items-center space-x-1.5 border border-neutral-700">
+                        <i class="fa-solid fa-camera"></i>
+                        <span id="btn-loc-cam">掃描儲位</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-neutral-900 border border-neutral-800 rounded-xl shadow-xl overflow-hidden flex flex-col flex-1">
+            <div class="p-4 sm:p-5 border-b border-neutral-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div class="flex items-center space-x-3">
+                    <h3 class="text-base font-bold text-slate-100" id="table-section-title">入庫紀錄清單</h3>
+                    <span id="record-count-badge" class="bg-neutral-800 text-slate-300 text-xs px-2.5 py-1 rounded-full font-semibold border border-neutral-700">0 筆</span>
+                </div>
+                <div class="flex items-center gap-3 flex-wrap">
+                    <!-- Inventory Export Button -->
+                    <button onclick="exportInventoryData()" id="btn-export-inventory" class="hidden bg-neutral-800 hover:bg-neutral-700 text-slate-200 border border-neutral-700 px-3.5 py-2 rounded-lg text-xs font-medium transition items-center space-x-1.5 shadow">
+                        <i class="fa-solid fa-file-export"></i>
+                        <span id="btn-export-inv-text">匯出盤點 CSV</span>
+                    </button>
+                    <!-- Scrap Export Button -->
+                    <button onclick="exportScrapData()" id="btn-export-scrap" class="hidden bg-neutral-800 hover:bg-neutral-700 text-slate-200 border border-neutral-700 px-3.5 py-2 rounded-lg text-xs font-medium transition items-center space-x-1.5 shadow">
+                        <i class="fa-solid fa-file-export"></i>
+                        <span id="btn-export-scrap-text">匯出報廢 CSV</span>
+                    </button>
+                    <!-- Search Input with Camera Scanner Button -->
+                    <div class="relative w-full sm:w-72 flex items-center">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                            <i class="fa-solid fa-search text-xs"></i>
+                        </div>
+                        <input type="text" id="search-filter-input" oninput="renderRecords()" 
+                               class="w-full pl-9 pr-10 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-slate-400 transition"
+                               placeholder="搜尋零件號碼、名稱、車牌或儲位...">
+                        <button onclick="startScanner('search')" class="absolute right-2 text-slate-400 hover:text-slate-200 p-1 transition" title="掃描 QR/Barcode">
+                            <i class="fa-solid fa-camera text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto flex-1">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="bg-neutral-950/80 text-slate-400 border-b border-neutral-800 text-[11px] uppercase tracking-wider">
+                            <th class="p-3.5 font-semibold" id="th-part-no">零件號碼</th>
+                            <th class="p-3.5 font-semibold" id="th-name">名稱</th>
+                            <th class="p-3.5 font-semibold inbound-col" id="th-plate">車牌</th>
+                            <th class="p-3.5 font-semibold inbound-col" id="th-qty">入庫數量 (預期)</th>
+                            <th class="p-3.5 font-semibold inbound-col" id="th-inbound-qty">點算數量</th>
+                            <th class="p-3.5 font-semibold inbound-col" id="th-diff">數量差異</th>
+                            <th class="p-3.5 font-semibold scrap-col hidden" id="th-reason">報廢原因</th>
+                            <th class="p-3.5 font-semibold search-source-col hidden" id="th-source">來源模式</th>
+                            <th class="p-3.5 font-semibold" id="th-loc">儲位</th>
+                            <th class="p-3.5 font-semibold text-right" id="th-action">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="records-tbody" class="divide-y divide-neutral-800/50">
+                        <!-- Dynamic Records -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- STAFF NAME MODAL (Mandatory on startup) -->
+    <div id="staff-modal" class="fixed inset-0 z-50 bg-neutral-950/95 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+                <h3 class="text-lg font-bold text-slate-100 flex items-center space-x-2">
+                    <i class="fa-solid fa-user-shield text-slate-300"></i>
+                    <span id="modal-staff-title">工作人員登入</span>
+                </h3>
+            </div>
+            <p class="text-xs text-slate-400" id="modal-staff-desc">請輸入您的工作人員名稱以開始使用系統：</p>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="modal-staff-label">工作人員名稱</label>
+                    <input type="text" id="modal-staff-input" 
+                           class="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 transition"
+                           placeholder="例如: 王小明"
+                           onkeydown="handleStaffInputKey(event)">
+                </div>
+            </div>
+            <div class="flex justify-end pt-2">
+                <button onclick="confirmStaffName()" class="w-full px-5 py-3 bg-slate-200 hover:bg-white text-black rounded-xl text-sm font-semibold transition shadow-md" id="btn-staff-confirm">確認並進入系統</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- WARNING MODAL FOR UNLISTED PART NUMBER -->
+    <div id="warning-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+                <h3 class="text-lg font-bold text-amber-400 flex items-center space-x-2">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span id="modal-warn-title">提示警告</span>
+                </h3>
+            </div>
+            <p class="text-sm text-slate-200" id="modal-warn-desc">入庫紀錄清單沒有此零件號碼！</p>
+            <div class="flex justify-end pt-2">
+                <button onclick="closeWarningModal()" class="w-full px-5 py-2.5 bg-slate-200 hover:bg-white text-black rounded-xl text-sm font-semibold transition shadow-md" id="btn-warn-confirm">確定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOCATION MODAL -->
+    <div id="location-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+                <h3 class="text-lg font-bold text-slate-100 flex items-center space-x-2">
+                    <i class="fa-solid fa-location-dot text-slate-300"></i>
+                    <span id="modal-loc-title">設定工作儲位</span>
+                </h3>
+            </div>
+            <p class="text-xs text-slate-400" id="modal-loc-desc">請選擇或輸入目前作業的儲位位置：</p>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="modal-loc-label">工作儲位名稱</label>
+                    <input type="text" id="modal-location-input" 
+                           class="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 transition"
+                           placeholder="例如: A-01-02">
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="closeLocationModal()" class="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-slate-200 rounded-xl text-sm font-medium transition" id="btn-modal-cancel">取消</button>
+                <button onclick="confirmLocation()" class="px-5 py-2 bg-slate-200 hover:bg-white text-black rounded-xl text-sm font-semibold transition shadow-md" id="btn-modal-confirm">確認設定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MANUAL INBOUND ITEM MODAL -->
+    <div id="manual-inbound-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+                <h3 class="text-lg font-bold text-slate-100 flex items-center space-x-2">
+                    <i class="fa-solid fa-plus-circle text-slate-300"></i>
+                    <span id="modal-manual-inbound-title">手動新增預期入庫項目</span>
+                </h3>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="lbl-manual-part">零件號碼</label>
+                    <input type="text" id="manual-part-input" class="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 transition font-mono" placeholder="請輸入零件號碼...">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="lbl-manual-name">零件名稱</label>
+                    <input type="text" id="manual-name-input" class="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 transition" placeholder="請輸入零件名稱...">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="lbl-manual-plate">車牌 (選填)</label>
+                    <input type="text" id="manual-plate-input" class="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 transition uppercase" placeholder="例如: AB1234">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="lbl-manual-qty">預期入庫數量</label>
+                    <input type="number" id="manual-qty-input" class="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 transition" placeholder="1" value="1">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="lbl-manual-loc">儲位 (選填)</label>
+                    <input type="text" id="manual-loc-input" class="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 transition" placeholder="例如: A-01">
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="closeManualInboundModal()" class="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-slate-200 rounded-xl text-sm font-medium transition" id="btn-manual-cancel">取消</button>
+                <button onclick="confirmManualInboundItem()" class="px-5 py-2 bg-slate-200 hover:bg-white text-black rounded-xl text-sm font-semibold transition shadow-md" id="btn-manual-confirm">確認加入</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- QUANTITY PROMPT MODAL FOR MANUAL INBOUND COUNT -->
+    <div id="count-qty-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+                <h3 class="text-lg font-bold text-slate-100 flex items-center space-x-2">
+                    <i class="fa-solid fa-calculator text-slate-300"></i>
+                    <span id="modal-count-title">確認入庫數量</span>
+                </h3>
+            </div>
+            <p class="text-xs text-slate-400" id="modal-count-desc">請輸入此零件本次入庫點算的數量：</p>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="lbl-count-part">零件號碼</label>
+                    <input type="text" id="count-part-display" readonly class="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-400 text-sm font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="lbl-count-qty">入庫數量</label>
+                    <input type="number" id="count-qty-input" class="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 transition" value="1" min="1">
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="closeCountQtyModal()" class="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-slate-200 rounded-xl text-sm font-medium transition" id="btn-count-cancel">取消</button>
+                <button onclick="confirmCountQty()" class="px-5 py-2 bg-slate-200 hover:bg-white text-black rounded-xl text-sm font-semibold transition shadow-md" id="btn-count-confirm">確認入庫</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRAP REASON MODAL -->
+    <div id="scrap-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+                <h3 class="text-lg font-bold text-slate-100 flex items-center space-x-2">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
+                    <span id="modal-scrap-title">填寫報廢原因</span>
+                </h3>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="modal-scrap-part-lbl">零件號碼</label>
+                    <input type="text" id="scrap-part-display" readonly class="w-full px-4 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-400 text-sm font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="modal-scrap-reason-lbl">報廢原因</label>
+                    <input type="text" id="scrap-reason-input" class="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 transition" placeholder="請輸入報廢原因...">
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="closeScrapModal()" class="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-slate-200 rounded-xl text-sm font-medium transition" id="btn-scrap-cancel">取消</button>
+                <button onclick="confirmScrapRecord()" class="px-5 py-2 bg-slate-200 hover:bg-white text-black rounded-xl text-sm font-semibold transition shadow-md" id="btn-scrap-confirm">確認報廢</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- INBOUND RECONCILIATION REASON MODAL -->
+    <div id="inbound-reason-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+                <h3 class="text-lg font-bold text-slate-100 flex items-center space-x-2">
+                    <i class="fa-solid fa-circle-exclamation text-rose-400"></i>
+                    <span id="modal-inbound-title">數量不符原因填寫</span>
+                </h3>
+            </div>
+            <p class="text-xs text-slate-400" id="modal-inbound-desc">點算數量與預期入庫數量不一致，請填寫原因才可匯出：</p>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5" id="modal-inbound-reason-lbl">差異原因說明</label>
+                    <textarea id="inbound-diff-reason-input" rows="3" class="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-400 transition" placeholder="請填寫數量不符原因..."></textarea>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="closeInboundReasonModal()" class="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-slate-200 rounded-xl text-sm font-medium transition" id="btn-inbound-reason-cancel">取消</button>
+                <button onclick="confirmInboundExport()" class="px-5 py-2 bg-slate-200 hover:bg-white text-black rounded-xl text-sm font-semibold transition shadow-md" id="btn-inbound-reason-confirm">確認並匯出</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CAMERA SCANNER MODAL -->
+    <div id="scanner-modal" class="fixed inset-0 z-50 bg-black/90 backdrop-blur-md hidden flex flex-col items-center justify-center p-4">
+        <div class="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 flex flex-col items-center">
+            <div class="flex items-center justify-between w-full border-b border-neutral-800 pb-3">
+                <h3 class="text-lg font-bold text-slate-100 flex items-center space-x-2">
+                    <i class="fa-solid fa-camera text-slate-300"></i>
+                    <span id="modal-scanner-title">相機掃描 QR / Barcode</span>
+                </h3>
+                <button onclick="stopScanner()" class="text-slate-400 hover:text-slate-200 text-lg p-1"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="relative w-full aspect-video bg-neutral-950 rounded-xl overflow-hidden border border-neutral-800 flex items-center justify-center">
+                <video id="interactive-video" class="w-full h-full object-cover"></video>
+                <div class="absolute inset-0 border-2 border-dashed border-slate-500/50 pointer-events-none rounded-xl m-8"></div>
+            </div>
+            <p class="text-xs text-slate-400 text-center" id="modal-scanner-desc">請將條碼或 QR code 對準相機鏡頭以進行掃描</p>
+            <div class="w-full pt-2">
+                <button onclick="stopScanner()" class="w-full px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-slate-200 rounded-xl text-sm font-medium transition">關閉相機</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 'inbound';
+        let currentLang = 'zh';
+        let staffName = '';
+        let workingLocation = '';
+        
+        let inboundList = []; 
+        let inventoryRecords = []; 
+        let scrapRecords = []; 
+
+        let pendingScanPartNo = '';
+        let codeReader = null;
+        let activeScannerTarget = 'input'; // 'input', 'search', or 'locationSearch'
+
+        const dict = {
+            zh: {
+                appTitle: "倉庫管理系統",
+                tabInbound: "入庫",
+                tabInventory: "盤點模式",
+                tabScrap: "零件報廢",
+                tabLocationSearch: "儲位搜索",
+                lblStaffName: "工作人員:",
+                lblWorkingLoc: "工作儲位:",
+                inboundHeaderTitle: "入庫清單匯入與管理",
+                inboundHeaderDesc: "支援匯入 Excel / CSV 檔或手動新增清單 (欄位: 零件號碼, 名稱, 車牌, 入庫數量)",
+                locSearchHeaderTitle: "儲位庫存搜索",
+                locSearchHeaderDesc: "輸入或掃描指定儲位，檢視該儲位內存放的所有零件與數量明細",
+                btnImportFile: "匯入 XLSX/CSV",
+                btnManualAddList: "手動新增清單",
+                btnExportFile: "匯出 CSV",
+                btnExportInventory: "匯出盤點 CSV",
+                btnExportScrap: "匯出報廢 CSV",
+                btnClearInbound: "清除",
+                scanPlaceholder: "請輸入或掃描零件號碼...",
+                btnCameraScan: "相機掃描",
+                btnAddRecord: "加入 / 點算",
+                btnLocCam: "掃描儲位",
+                tableSectionTitleInbound: "入庫紀錄清單",
+                tableSectionTitleInventory: "盤點紀錄清單",
+                tableSectionTitleScrap: "報廢紀錄清單",
+                tableSectionTitleSearch: "儲位搜索清單",
+                searchPlaceholder: "搜尋零件號碼、名稱、車牌或儲位...",
+                locationSearchPlaceholder: "請輸入或掃描儲位名稱 (例如: A-01)...",
+                thPartNo: "零件號碼",
+                thName: "名稱",
+                thPlate: "車牌",
+                thQty: "入庫數量 (預期)",
+                thInboundQty: "點算數量",
+                thDiff: "數量差異",
+                thReason: "報廢原因",
+                thSource: "來源模式",
+                thLoc: "儲位",
+                thAction: "操作",
+                modalStaffTitle: "工作人員登入",
+                modalStaffDesc: "請輸入您的工作人員名稱以開始使用系統：",
+                modalStaffLabel: "工作人員名稱",
+                btnStaffConfirm: "確認並進入系統",
+                modalLocTitle: "設定工作儲位",
+                modalLocDesc: "請選擇或輸入目前作業的儲位位置：",
+                modalLocLabel: "工作儲位名稱",
+                btnModalCancel: "取消",
+                btnModalConfirm: "確認設定",
+                modalScrapTitle: "填寫報廢原因",
+                modalScrapPartLbl: "零件號碼",
+                modalScrapReasonLbl: "報廢原因",
+                btnScrapCancel: "取消",
+                btnScrapConfirm: "確認報廢",
+                modalInboundTitle: "數量不符原因填寫",
+                modalInboundDesc: "點算數量與預期入庫數量不一致，請填寫原因才可匯出：",
+                modalInboundReasonLbl: "差異原因說明",
+                btnInboundReasonCancel: "取消",
+                btnInboundReasonConfirm: "確認並匯出",
+                delete: "刪除",
+                noRecords: "尚無記錄",
+                setLocPrompt: "請先設定工作儲位才可以開始工作！",
+                needInboundImportPrompt: "尚未建立入庫清單，請先匯入或手動新增入庫清單才可以進行點算！",
+                partNotFoundPrompt: "入庫紀錄清單沒有此零件號碼！"
+            },
+            en: {
+                appTitle: "Warehouse Management System",
+                tabInbound: "Inbound",
+                tabInventory: "Inventory Mode",
+                tabScrap: "Parts Scrap",
+                tabLocationSearch: "Location Search",
+                lblStaffName: "Staff:",
+                lblWorkingLoc: "Working Loc:",
+                inboundHeaderTitle: "Inbound List Import & Management",
+                inboundHeaderDesc: "Supports Excel / CSV import or manual addition (Columns: Parts Number, Name, Plate, Inbound Qty)",
+                locSearchHeaderTitle: "Location Inventory Search",
+                locSearchHeaderDesc: "Enter or scan a specific location to view all parts and quantities stored there",
+                btnImportFile: "Import XLSX/CSV",
+                btnManualAddList: "Manual Add List",
+                btnExportFile: "Export CSV",
+                btnExportInventory: "Export Inv CSV",
+                btnExportScrap: "Export Scrap CSV",
+                btnClearInbound: "Clear",
+                scanPlaceholder: "Enter or scan parts number...",
+                btnCameraScan: "Camera Scan",
+                btnAddRecord: "Add / Count",
+                btnLocCam: "Scan Loc",
+                tableSectionTitleInbound: "Inbound Record List",
+                tableSectionTitleInventory: "Inventory Record List",
+                tableSectionTitleScrap: "Scrap Record List",
+                tableSectionTitleSearch: "Location Search List",
+                searchPlaceholder: "Search parts number, name, plate or location...",
+                locationSearchPlaceholder: "Enter or scan location name (e.g., A-01)...",
+                thPartNo: "Parts Number",
+                thName: "Name",
+                thPlate: "Plate",
+                thQty: "Expected Qty",
+                thInboundQty: "Counted Qty",
+                thDiff: "Qty Difference",
+                thReason: "Reason",
+                thSource: "Source Mode",
+                thLoc: "Location",
+                thAction: "Action",
+                modalStaffTitle: "Staff Login",
+                modalStaffDesc: "Please enter your staff name to start using the system:",
+                modalStaffLabel: "Staff Name",
+                btnStaffConfirm: "Confirm & Enter",
+                modalLocTitle: "Set Working Location",
+                modalLocDesc: "Please select or enter the current working location:",
+                modalLocLabel: "Working Location Name",
+                btnModalCancel: "Cancel",
+                btnModalConfirm: "Confirm",
+                modalScrapTitle: "Enter Scrap Reason",
+                modalScrapPartLbl: "Parts Number",
+                modalScrapReasonLbl: "Reason",
+                btnScrapCancel: "Cancel",
+                btnScrapConfirm: "Confirm Scrap",
+                modalInboundTitle: "Quantity Discrepancy Reason",
+                modalInboundDesc: "Count does not match expected quantity. Please provide a reason before export:",
+                modalInboundReasonLbl: "Discrepancy Reason",
+                btnInboundReasonCancel: "Cancel",
+                btnInboundReasonConfirm: "Confirm & Export",
+                delete: "Delete",
+                noRecords: "No records found",
+                setLocPrompt: "Please set working location before starting work!",
+                needInboundImportPrompt: "Inbound list not created yet. Please import or add manually before counting!",
+                partNotFoundPrompt: "Part number not found in the inbound record list!"
+            }
+        };
+
+        window.onload = function() {
+            updateLanguageUI();
+            document.getElementById('staff-modal').classList.remove('hidden');
+            document.getElementById('modal-staff-input').focus();
+            switchMode('inbound');
+            try {
+                codeReader = new ZXing.BrowserQRCodeReader();
+            } catch(e) {
+                console.warn('ZXing initialization warning:', e);
+            }
+        };
+
+        function handleStaffInputKey(event) {
+            if (event.key === 'Enter') {
+                confirmStaffName();
+            }
+        }
+
+        function confirmStaffName() {
+            const nameVal = document.getElementById('modal-staff-input').value.trim();
+            if(!nameVal) {
+                alert(currentLang === 'zh' ? '請輸入工作人員名稱' : 'Please enter staff name');
+                return;
+            }
+            staffName = nameVal;
+            document.getElementById('current-staff-display').innerText = staffName;
+            
+            const container = document.getElementById('staff-name-container');
+            container.classList.remove('hidden');
+            container.classList.add('flex');
+
+            document.getElementById('staff-modal').classList.add('hidden');
+        }
+
+        function showWarning(msg) {
+            const descEl = document.getElementById('modal-warn-desc');
+            if (descEl) descEl.innerText = msg;
+            document.getElementById('warning-modal').classList.remove('hidden');
+        }
+
+        function closeWarningModal() {
+            document.getElementById('warning-modal').classList.add('hidden');
+        }
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            document.getElementById('lang-btn-text').innerText = currentLang === 'zh' ? 'EN' : '中';
+            updateLanguageUI();
+            renderRecords();
+        }
+
+        function updateLanguageUI() {
+            const t = dict[currentLang];
+            const appTitleEl = document.getElementById('app-title');
+            if (appTitleEl) appTitleEl.innerText = t.appTitle;
+            
+            const tabInboundEl = document.getElementById('tab-inbound');
+            if (tabInboundEl) tabInboundEl.innerText = t.tabInbound;
+            
+            const tabInvEl = document.getElementById('tab-inventory');
+            if (tabInvEl) tabInvEl.innerText = t.tabInventory;
+            
+            const tabScrapEl = document.getElementById('tab-scrap');
+            if (tabScrapEl) tabScrapEl.innerText = t.tabScrap;
+            
+            const tabSearchEl = document.getElementById('tab-locationSearch');
+            if (tabSearchEl) tabSearchEl.innerText = t.tabLocationSearch;
+            
+            const lblStaffEl = document.getElementById('lbl-staff-name');
+            if (lblStaffEl) lblStaffEl.innerText = t.lblStaffName;
+            
+            const lblLocEl = document.getElementById('lbl-working-loc');
+            if (lblLocEl) lblLocEl.innerText = t.lblWorkingLoc;
+            
+            const inboundHTitle = document.getElementById('inbound-header-title');
+            if (inboundHTitle) inboundHTitle.innerText = t.inboundHeaderTitle;
+            
+            const inboundHDesc = document.getElementById('inbound-header-desc');
+            if (inboundHDesc) inboundHDesc.innerText = t.inboundHeaderDesc;
+
+            const locSearchHTitle = document.getElementById('loc-search-header-title');
+            if (locSearchHTitle) locSearchHTitle.innerText = t.locSearchHeaderTitle;
+
+            const locSearchHDesc = document.getElementById('loc-search-header-desc');
+            if (locSearchHDesc) locSearchHDesc.innerText = t.locSearchHeaderDesc;
+            
+            const btnImp = document.getElementById('btn-import-file');
+            if (btnImp) btnImp.innerText = t.btnImportFile;
+            
+            const btnMan = document.getElementById('btn-manual-add-list');
+            if (btnMan) btnMan.innerText = t.btnManualAddList;
+            
+            const btnExp = document.getElementById('btn-export-file');
+            if (btnExp) btnExp.innerText = t.btnExportFile;
+
+            const btnExpInvText = document.getElementById('btn-export-inv-text');
+            if (btnExpInvText) btnExpInvText.innerText = t.btnExportInventory;
+
+            const btnExpScrapText = document.getElementById('btn-export-scrap-text');
+            if (btnExpScrapText) btnExpScrapText.innerText = t.btnExportScrap;
+            
+            const btnClr = document.getElementById('btn-clear-inbound');
+            if (btnClr) btnClr.innerText = t.btnClearInbound;
+            
+            const scanInp = document.getElementById('scan-input');
+            if (scanInp) scanInp.placeholder = t.scanPlaceholder;
+
+            const btnCamScan = document.getElementById('btn-camera-scan');
+            if (btnCamScan) btnCamScan.innerText = t.btnCameraScan;
+            
+            const btnAddRec = document.getElementById('btn-add-record');
+            if (btnAddRec) btnAddRec.innerText = t.btnAddRecord;
+
+            const btnLocCam = document.getElementById('btn-loc-cam');
+            if (btnLocCam) btnLocCam.innerText = t.btnLocCam;
+
+            const locSearchInp = document.getElementById('location-search-input');
+            if (locSearchInp) locSearchInp.placeholder = t.locationSearchPlaceholder;
+            
+            updateTableTitle();
+            
+            const searchFilterInp = document.getElementById('search-filter-input');
+            if (searchFilterInp) searchFilterInp.placeholder = t.searchPlaceholder;
+            
+            const thPart = document.getElementById('th-part-no');
+            if (thPart) thPart.innerText = t.thPartNo;
+            
+            const thName = document.getElementById('th-name');
+            if (thName) thName.innerText = t.thName;
+            
+            const thPlate = document.getElementById('th-plate');
+            if (thPlate) thPlate.innerText = t.thPlate;
+            
+            const thQty = document.getElementById('th-qty');
+            if (thQty) thQty.innerText = t.thQty;
+            
+            const thInbQty = document.getElementById('th-inbound-qty');
+            if (thInbQty) thInbQty.innerText = t.thInboundQty;
+            
+            const thDiff = document.getElementById('th-diff');
+            if (thDiff) thDiff.innerText = t.thDiff;
+            
+            const thReason = document.getElementById('th-reason');
+            if (thReason) thReason.innerText = t.thReason;
+
+            const thSource = document.getElementById('th-source');
+            if (thSource) thSource.innerText = t.thSource;
+            
+            const thLoc = document.getElementById('th-loc');
+            if (thLoc) thLoc.innerText = t.thLoc;
+            
+            const thAction = document.getElementById('th-action');
+            if (thAction) thAction.innerText = t.thAction;
+
+            const modalStaffTitle = document.getElementById('modal-staff-title');
+            if (modalStaffTitle) modalStaffTitle.innerText = t.modalStaffTitle;
+            
+            const modalStaffDesc = document.getElementById('modal-staff-desc');
+            if (modalStaffDesc) modalStaffDesc.innerText = t.modalStaffDesc;
+            
+            const modalStaffLabel = document.getElementById('modal-staff-label');
+            if (modalStaffLabel) modalStaffLabel.innerText = t.modalStaffLabel;
+            
+            const btnStaffConfirm = document.getElementById('btn-staff-confirm');
+            if (btnStaffConfirm) btnStaffConfirm.innerText = t.btnStaffConfirm;
+
+            const modalLocTitle = document.getElementById('modal-loc-title');
+            if (modalLocTitle) modalLocTitle.innerText = t.modalLocTitle;
+            
+            const modalLocDesc = document.getElementById('modal-loc-desc');
+            if (modalLocDesc) modalLocDesc.innerText = t.modalLocDesc;
+            
+            const modalLocLabel = document.getElementById('modal-loc-label');
+            if (modalLocLabel) modalLocLabel.innerText = t.modalLocLabel;
+            
+            const btnModalCancel = document.getElementById('btn-modal-cancel');
+            if (btnModalCancel) btnModalCancel.innerText = t.btnModalCancel;
+            
+            const btnModalConfirm = document.getElementById('btn-modal-confirm');
+            if (btnModalConfirm) btnModalConfirm.innerText = t.btnModalConfirm;
+
+            const modalScrapTitle = document.getElementById('modal-scrap-title');
+            if (modalScrapTitle) modalScrapTitle.innerText = t.modalScrapTitle;
+            
+            const modalScrapPartLbl = document.getElementById('modal-scrap-part-lbl');
+            if (modalScrapPartLbl) modalScrapPartLbl.innerText = t.modalScrapPartLbl;
+            
+            const modalScrapReasonLbl = document.getElementById('modal-scrap-reason-lbl');
+            if (modalScrapReasonLbl) modalScrapReasonLbl.innerText = t.modalScrapReasonLbl;
+            
+            const btnScrapCancel = document.getElementById('btn-scrap-cancel');
+            if (btnScrapCancel) btnScrapCancel.innerText = t.btnScrapCancel;
+            
+            const btnScrapConfirm = document.getElementById('btn-scrap-confirm');
+            if (btnScrapConfirm) btnScrapConfirm.innerText = t.btnScrapConfirm;
+
+            const modalInboundTitle = document.getElementById('modal-inbound-title');
+            if (modalInboundTitle) modalInboundTitle.innerText = t.modalInboundTitle;
+            
+            const modalInboundDesc = document.getElementById('modal-inbound-desc');
+            if (modalInboundDesc) modalInboundDesc.innerText = t.modalInboundDesc;
+            
+            const modalInboundReasonLbl = document.getElementById('modal-inbound-reason-lbl');
+            if (modalInboundReasonLbl) modalInboundReasonLbl.innerText = t.modalInboundReasonLbl;
+            
+            const btnInboundReasonCancel = document.getElementById('btn-inbound-reason-cancel');
+            if (btnInboundReasonCancel) btnInboundReasonCancel.innerText = t.btnInboundReasonCancel;
+            
+            const btnInboundReasonConfirm = document.getElementById('btn-inbound-reason-confirm');
+            if (btnInboundReasonConfirm) btnInboundReasonConfirm.innerText = t.btnInboundReasonConfirm;
+        }
+
+        function updateTableTitle() {
+            const t = dict[currentLang];
+            let titleText = t.tableSectionTitleInbound;
+            if (currentMode === 'inventory') titleText = t.tableSectionTitleInventory;
+            else if (currentMode === 'scrap') titleText = t.tableSectionTitleScrap;
+            else if (currentMode === 'locationSearch') titleText = t.tableSectionTitleSearch;
+            
+            const titleEl = document.getElementById('table-section-title');
+            if (titleEl) titleEl.innerText = titleText;
+        }
+
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.className = "mode-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-neutral-900 text-slate-400 hover:bg-neutral-800 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap";
+            });
+            
+            const activeBtn = document.getElementById(`nav-${mode}`);
+            if(activeBtn) {
+                activeBtn.className = "mode-btn px-4 py-2 rounded-lg text-sm font-semibold transition bg-gradient-to-r from-slate-100 to-slate-300 text-black shadow-lg shadow-slate-200/10 flex items-center space-x-2 whitespace-nowrap";
+            }
+
+            updateTableTitle();
+
+            const inboundPanel = document.getElementById('panel-inbound');
+            const scanInputPanel = document.getElementById('panel-scan-input');
+            const locSearchPanel = document.getElementById('panel-location-search');
+            const workingLocContainer = document.getElementById('working-location-container');
+            const btnExportInv = document.getElementById('btn-export-inventory');
+            const btnExportScrap = document.getElementById('btn-export-scrap');
+
+            inboundPanel.classList.toggle('hidden', mode !== 'inbound');
+            scanInputPanel.classList.toggle('hidden', mode === 'locationSearch');
+            locSearchPanel.classList.toggle('hidden', mode !== 'locationSearch');
+            
+            btnExportInv.classList.toggle('hidden', mode !== 'inventory');
+            btnExportInv.classList.toggle('flex', mode === 'inventory');
+
+            btnExportScrap.classList.toggle('hidden', mode !== 'scrap');
+            btnExportScrap.classList.toggle('flex', mode === 'scrap');
+            
+            if (mode === 'inventory' || mode === 'scrap' || mode === 'inbound') {
+                workingLocContainer.classList.remove('hidden');
+                workingLocContainer.classList.add('flex');
+            } else {
+                workingLocContainer.classList.add('hidden');
+                workingLocContainer.classList.remove('flex');
+            }
+
+            if (mode === 'inventory' && !workingLocation) {
+                openLocationModal();
+            }
+
+            renderRecords();
+        }
+
+        function openLocationModal() {
+            document.getElementById('modal-location-input').value = workingLocation;
+            document.getElementById('location-modal').classList.remove('hidden');
+        }
+
+        function closeLocationModal() {
+            document.getElementById('location-modal').classList.add('hidden');
+        }
+
+        function confirmLocation() {
+            const locVal = document.getElementById('modal-location-input').value.trim();
+            if(!locVal) {
+                alert(currentLang === 'zh' ? '請輸入儲位名稱' : 'Please enter location name');
+                return;
+            }
+            workingLocation = locVal;
+            document.getElementById('current-location-display').innerText = workingLocation;
+            closeLocationModal();
+        }
+
+        function openManualInboundModal() {
+            document.getElementById('manual-part-input').value = '';
+            document.getElementById('manual-name-input').value = '';
+            document.getElementById('manual-plate-input').value = '';
+            document.getElementById('manual-qty-input').value = '1';
+            document.getElementById('manual-loc-input').value = workingLocation || '';
+            document.getElementById('manual-inbound-modal').classList.remove('hidden');
+        }
+
+        function closeManualInboundModal() {
+            document.getElementById('manual-inbound-modal').classList.add('hidden');
+        }
+
+        function confirmManualInboundItem() {
+            const partNo = document.getElementById('manual-part-input').value.trim();
+            const name = document.getElementById('manual-name-input').value.trim();
+            const plate = document.getElementById('manual-plate-input').value.trim();
+            const expectedQty = parseInt(document.getElementById('manual-qty-input').value) || 0;
+            const loc = document.getElementById('manual-loc-input').value.trim();
+
+            if (!partNo) {
+                alert(currentLang === 'zh' ? '請輸入零件號碼' : 'Please enter part number');
+                return;
+            }
+
+            inboundList.push({
+                partNo: partNo,
+                name: name || '-',
+                plate: plate || '',
+                expectedQty: expectedQty,
+                actualQty: 0,
+                location: loc || workingLocation || '-'
+            });
+
+            closeManualInboundModal();
+            renderRecords();
+        }
+
+        function handleInboundFileImport(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const data = new Uint8Array(evt.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+
+                    if(json.length <= 1) {
+                        alert(currentLang === 'zh' ? '檔案內容為空或格式錯誤' : 'File is empty or invalid format');
+                        return;
+                    }
+
+                    const header = json[0].map(h => String(h).trim().toLowerCase());
+                    let partNoIdx = header.findIndex(h => h.includes('零件') || h.includes('part') || h.includes('號碼'));
+                    let nameIdx = header.findIndex(h => h.includes('名稱') || h.includes('name'));
+                    let plateIdx = header.findIndex(h => h.includes('車牌') || h.includes('plate') || h.includes('預留'));
+                    let qtyIdx = header.findIndex(h => h.includes('入庫') || h.includes('數量') || h.includes('qty') || h.includes('quantity'));
+
+                    if(partNoIdx === -1) partNoIdx = 0;
+                    if(nameIdx === -1) nameIdx = 1;
+                    if(plateIdx === -1) plateIdx = 2;
+                    if(qtyIdx === -1) qtyIdx = 3;
+
+                    inboundList = [];
+                    for(let i = 1; i < json.length; i++) {
+                        const row = json[i];
+                        if(!row || row.length === 0) continue;
+                        const partNo = row[partNoIdx] ? String(row[partNoIdx]).trim() : '';
+                        const name = row[nameIdx] ? String(row[nameIdx]).trim() : '';
+                        const plate = plateIdx !== -1 && row[plateIdx] ? String(row[plateIdx]).trim() : '';
+                        const expectedQty = row[qtyIdx] ? parseInt(row[qtyIdx]) || 0 : 0;
+                        
+                        if(partNo) {
+                            inboundList.push({
+                                partNo: partNo,
+                                name: name || '-',
+                                plate: plate || '',
+                                expectedQty: expectedQty,
+                                actualQty: 0,
+                                location: workingLocation || '-'
+                            });
+                        }
+                    }
+
+                    alert(currentLang === 'zh' ? `成功匯入 ${inboundList.length} 筆入庫清單項目` : `Successfully imported ${inboundList.length} items`);
+                    renderRecords();
+                    e.target.value = '';
+                } catch(err) {
+                    console.error(err);
+                    alert(currentLang === 'zh' ? '解析檔案失敗，請確認格式是否正確' : 'Failed to parse file, please check format');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function clearInboundData() {
+            if(confirm(currentLang === 'zh' ? '確定要清除所有入庫清單嗎？' : 'Are you sure to clear inbound list?')) {
+                inboundList = [];
+                renderRecords();
+            }
+        }
+
+        function exportInboundData() {
+            if(inboundList.length === 0) {
+                alert(currentLang === 'zh' ? '沒有可匯出的入庫資料' : 'No inbound data to export');
+                return;
+            }
+
+            let hasDiscrepancy = inboundList.some(item => (item.actualQty - item.expectedQty) !== 0);
+            if(hasDiscrepancy) {
+                document.getElementById('inbound-diff-reason-input').value = '';
+                document.getElementById('inbound-reason-modal').classList.remove('hidden');
+            } else {
+                executeExportCSV();
+            }
+        }
+
+        function closeInboundReasonModal() {
+            document.getElementById('inbound-reason-modal').classList.add('hidden');
+        }
+
+        function confirmInboundExport() {
+            const reason = document.getElementById('inbound-diff-reason-input').value.trim();
+            if(!reason) {
+                alert(currentLang === 'zh' ? '數量有差異，必須填寫原因才可以匯出！' : 'Quantity discrepancy! Reason is required for export.');
+                return;
+            }
+            closeInboundReasonModal();
+            executeExportCSV(reason);
+        }
+
+        function executeExportCSV(discrepancyReason = '') {
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+            
+            if (currentLang === 'zh') {
+                csvContent += "工作人員,零件號碼,名稱,車牌,預期入庫數量,點算數量,數量差異,差異原因,儲位\n";
+            } else {
+                csvContent += "Staff,Parts Number,Name,Plate,Expected Qty,Counted Qty,Qty Difference,Discrepancy Reason,Location\n";
+            }
+            
+            inboundList.forEach(item => {
+                let diff = item.actualQty - item.expectedQty;
+                let row = [
+                    `"${staffName || (currentLang === 'zh' ? '未指定' : 'Unspecified')}"`,
+                    `"${item.partNo}"`,
+                    `"${item.name}"`,
+                    `"${item.plate || ''}"`,
+                    item.expectedQty,
+                    item.actualQty,
+                    diff,
+                    `"${discrepancyReason || ''}"`,
+                    `"${item.location || '-'}"`
+                ].join(",");
+                csvContent += row + "\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `inbound_report_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function exportInventoryData() {
+            if(inventoryRecords.length === 0) {
+                alert(currentLang === 'zh' ? '沒有可匯出的盤點資料' : 'No inventory data to export');
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+            if (currentLang === 'zh') {
+                csvContent += "工作人員,零件號碼,名稱,數量,儲位\n";
+            } else {
+                csvContent += "Staff,Parts Number,Name,Quantity,Location\n";
+            }
+
+            inventoryRecords.forEach(item => {
+                let row = [
+                    `"${staffName || (currentLang === 'zh' ? '未指定' : 'Unspecified')}"`,
+                    `"${item.partNo}"`,
+                    `"${item.name || '-'}"`,
+                    item.qty,
+                    `"${item.location || '-'}"`
+                ].join(",");
+                csvContent += row + "\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `inventory_report_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function exportScrapData() {
+            if(scrapRecords.length === 0) {
+                alert(currentLang === 'zh' ? '沒有可匯出的報廢資料' : 'No scrap data to export');
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+            if (currentLang === 'zh') {
+                csvContent += "工作人員,零件號碼,名稱,數量,儲位,報廢原因\n";
+            } else {
+                csvContent += "Staff,Parts Number,Name,Quantity,Location,Scrap Reason\n";
+            }
+
+            scrapRecords.forEach(item => {
+                let row = [
+                    `"${staffName || (currentLang === 'zh' ? '未指定' : 'Unspecified')}"`,
+                    `"${item.partNo}"`,
+                    `"${item.name || '-'}"`,
+                    item.qty,
+                    `"${item.location || '-'}"`,
+                    `"${item.reason || ''}"`
+                ].join(",");
+                csvContent += row + "\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `scrap_report_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function handleScanInput(event) {
+            if (event.key === 'Enter') {
+                processManualScan();
+            }
+        }
+
+        function processManualScan() {
+            const inputEl = document.getElementById('scan-input');
+            const val = inputEl.value.trim();
+            if(!val) return;
+            processScannedValue(val);
+            inputEl.value = '';
+        }
+
+        function processScannedValue(val) {
+            if (currentMode === 'inbound') {
+                if (inboundList.length === 0) {
+                    alert(dict[currentLang].needInboundImportPrompt);
+                    return;
+                }
+
+                let found = inboundList.find(item => item.partNo === val);
+                if(found) {
+                    pendingScanPartNo = val;
+                    document.getElementById('count-part-display').value = val;
+                    document.getElementById('count-qty-input').value = '1';
+                    document.getElementById('count-qty-modal').classList.remove('hidden');
+                } else {
+                    showWarning(dict[currentLang].partNotFoundPrompt);
+                }
+            } else if (currentMode === 'inventory') {
+                if(!workingLocation) {
+                    alert(dict[currentLang].setLocPrompt);
+                    openLocationModal();
+                    return;
+                }
+                let found = inventoryRecords.find(item => item.partNo === val && item.location === workingLocation);
+                if(found) {
+                    found.qty += 1;
+                } else {
+                    inventoryRecords.push({
+                        partNo: val,
+                        name: '盤點零件',
+                        qty: 1,
+                        location: workingLocation
+                    });
+                }
+                renderRecords();
+            } else if (currentMode === 'scrap') {
+                pendingScanPartNo = val;
+                document.getElementById('scrap-part-display').value = val;
+                document.getElementById('scrap-reason-input').value = '';
+                document.getElementById('scrap-modal').classList.remove('hidden');
+            }
+        }
+
+        function closeCountQtyModal() {
+            document.getElementById('count-qty-modal').classList.add('hidden');
+            pendingScanPartNo = '';
+        }
+
+        function confirmCountQty() {
+            const qtyVal = parseInt(document.getElementById('count-qty-input').value) || 1;
+            if (qtyVal <= 0) {
+                alert(currentLang === 'zh' ? '請輸入有效的入庫數量' : 'Please enter valid quantity');
+                return;
+            }
+
+            let found = inboundList.find(item => item.partNo === pendingScanPartNo);
+            if (found) {
+                found.actualQty += qtyVal;
+                if((!found.location || found.location === '-') && workingLocation) {
+                    found.location = workingLocation;
+                }
+            }
+
+            closeCountQtyModal();
+            renderRecords();
+        }
+
+        function closeScrapModal() {
+            document.getElementById('scrap-modal').classList.add('hidden');
+            pendingScanPartNo = '';
+        }
+
+        function confirmScrapRecord() {
+            const reason = document.getElementById('scrap-reason-input').value.trim();
+            if(!reason) {
+                alert(currentLang === 'zh' ? '請填寫報廢原因' : 'Please enter scrap reason');
+                return;
+            }
+            
+            scrapRecords.push({
+                partNo: pendingScanPartNo,
+                name: '報廢零件',
+                qty: 1,
+                location: workingLocation || '未設定',
+                reason: reason
+            });
+
+            closeScrapModal();
+            renderRecords();
+        }
+
+        function renderRecords() {
+            const tbody = document.getElementById('records-tbody');
+            const searchFilter = document.getElementById('search-filter-input').value.toLowerCase();
+            const locSearchFilter = currentMode === 'locationSearch' ? document.getElementById('location-search-input').value.toLowerCase() : '';
+            
+            tbody.innerHTML = '';
+            
+            let displayList = [];
+            const t = dict[currentLang];
+
+            const inboundCols = document.querySelectorAll('.inbound-col');
+            const scrapCols = document.querySelectorAll('.scrap-col');
+            const searchSourceCols = document.querySelectorAll('.search-source-col');
+
+            inboundCols.forEach(el => el.classList.toggle('hidden', currentMode !== 'inbound'));
+            scrapCols.forEach(el => el.classList.toggle('hidden', currentMode !== 'scrap'));
+            searchSourceCols.forEach(el => el.classList.toggle('hidden', currentMode !== 'locationSearch'));
+
+            if (currentMode === 'inbound') {
+                displayList = inboundList;
+            } else if (currentMode === 'inventory') {
+                displayList = inventoryRecords;
+            } else if (currentMode === 'scrap') {
+                displayList = scrapRecords;
+            } else if (currentMode === 'locationSearch') {
+                displayList = [
+                    ...inboundList.map(i => ({...i, sourceMode: currentLang === 'zh' ? '入庫' : 'Inbound'})),
+                    ...inventoryRecords.map(i => ({...i, sourceMode: currentLang === 'zh' ? '盤點' : 'Inventory'})),
+                    ...scrapRecords.map(i => ({...i, sourceMode: currentLang === 'zh' ? '報廢' : 'Scrap'}))
+                ];
+            }
+
+            displayList = displayList.filter(item => {
+                const partNo = String(item.partNo || '').toLowerCase();
+                const name = String(item.name || '').toLowerCase();
+                const plate = String(item.plate || '').toLowerCase();
+                const loc = String(item.location || '').toLowerCase();
+                
+                const matchesSearch = partNo.includes(searchFilter) || name.includes(searchFilter) || plate.includes(searchFilter) || loc.includes(searchFilter);
+                const matchesLocSearch = currentMode !== 'locationSearch' || !locSearchFilter || loc.includes(locSearchFilter);
+                
+                return matchesSearch && matchesLocSearch;
+            });
+
+            const countText = currentLang === 'zh' ? `${displayList.length} 筆` : `${displayList.length} items`;
+            document.getElementById('record-count-badge').innerText = countText;
+
+            if (displayList.length === 0) {
+                let colspan = 6;
+                if (currentMode === 'inbound') colspan = 9;
+                else if (currentMode === 'scrap') colspan = 8;
+                else if (currentMode === 'locationSearch') colspan = 7;
+                tbody.innerHTML = `<tr><td colspan="${colspan}" class="p-8 text-center text-slate-500">${t.noRecords}</td></tr>`;
+                return;
+            }
+
+            displayList.forEach((item, index) => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-neutral-800/40 transition border-b border-neutral-800/60";
+
+                let html = `
+                    <td class="p-3.5 font-mono text-slate-200">${item.partNo}</td>
+                    <td class="p-3.5 text-slate-300">
+                        <input type="text" value="${item.name || ''}" onchange="updateItemField(${index}, 'name', this.value)" class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-slate-100 w-full focus:outline-none focus:border-slate-400">
+                    </td>
+                `;
+
+                if (currentMode === 'inbound') {
+                    let diff = item.actualQty - item.expectedQty;
+                    let diffColor = diff === 0 ? 'text-slate-300 font-semibold' : 'text-amber-400 font-semibold';
+                    html += `
+                        <td class="p-3.5">
+                            <input type="text" value="${item.plate || ''}" onchange="updateItemField(${index}, 'plate', this.value)" class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-slate-100 w-28 uppercase focus:outline-none focus:border-slate-400" placeholder="例如: AB1234">
+                        </td>
+                        <td class="p-3.5 text-slate-300">
+                            <input type="number" value="${item.expectedQty || 0}" onchange="updateItemField(${index}, 'expectedQty', parseInt(this.value)||0)" class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-slate-100 w-20 focus:outline-none focus:border-slate-400">
+                        </td>
+                        <td class="p-3.5">
+                            <input type="number" value="${item.actualQty}" onchange="updateItemField(${index}, 'actualQty', parseInt(this.value)||0)" class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-slate-100 w-20 focus:outline-none focus:border-slate-400">
+                        </td>
+                        <td class="p-3.5 ${diffColor}">${diff}</td>
+                    `;
+                } else if (currentMode !== 'locationSearch') {
+                    html += `
+                        <td class="p-3.5">
+                            <input type="number" value="${item.qty}" onchange="updateItemField(${index}, 'qty', parseInt(this.value)||0)" class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-slate-100 w-20 focus:outline-none focus:border-slate-400">
+                        </td>
+                    `;
+                }
+
+                if (currentMode === 'scrap') {
+                    html += `
+                        <td class="p-3.5 text-slate-300 text-xs">
+                            <input type="text" value="${item.reason || ''}" onchange="updateItemField(${index}, 'reason', this.value)" class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-slate-100 w-full focus:outline-none focus:border-slate-400">
+                        </td>
+                    `;
+                }
+
+                if (currentMode === 'locationSearch') {
+                    html += `
+                        <td class="p-3.5">
+                            <input type="number" value="${item.qty !== undefined ? item.qty : (item.actualQty || 0)}" onchange="updateItemField(${index}, 'qty', parseInt(this.value)||0)" class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-slate-100 w-20 focus:outline-none focus:border-slate-400">
+                        </td>
+                        <td class="p-3.5 text-slate-300 font-medium">
+                            <span class="px-2 py-0.5 bg-neutral-800 border border-neutral-700 rounded text-[10px]">${item.sourceMode || '-'}</span>
+                        </td>
+                    `;
+                }
+
+                html += `
+                    <td class="p-3.5 text-slate-300">
+                        <input type="text" value="${item.location || ''}" onchange="updateItemField(${index}, 'location', this.value)" class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-slate-100 w-28 focus:outline-none focus:border-slate-400">
+                    </td>
+                    <td class="p-3.5 text-right">
+                        <button onclick="deleteItem(${index})" class="text-rose-400 hover:text-rose-300 text-xs bg-rose-950/40 hover:bg-rose-900/50 border border-rose-900/50 px-2.5 py-1 rounded transition">
+                            <i class="fa-solid fa-trash-can mr-1"></i>${t.delete}
+                        </button>
+                    </td>
+                `;
+
+                tr.innerHTML = html;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updateItemField(index, field, value) {
+            if (currentMode === 'inbound') {
+                inboundList[index][field] = value;
+            } else if (currentMode === 'inventory') {
+                inventoryRecords[index][field] = value;
+            } else if (currentMode === 'scrap') {
+                scrapRecords[index][field] = value;
+            }
+            renderRecords();
+        }
+
+        function deleteItem(index) {
+            if(confirm(currentLang === 'zh' ? '確定要刪除此筆紀錄嗎？' : 'Are you sure to delete this record?')) {
+                if (currentMode === 'inbound') {
+                    inboundList.splice(index, 1);
+                } else if (currentMode === 'inventory') {
+                    inventoryRecords.splice(index, 1);
+                } else if (currentMode === 'scrap') {
+                    scrapRecords.splice(index, 1);
+                }
+                renderRecords();
+            }
+        }
+
+        // --- ZXing Camera Scanner Functions ---
+        function startScanner(target) {
+            activeScannerTarget = target; // 'input', 'search', or 'locationSearch'
+            document.getElementById('scanner-modal').classList.remove('hidden');
+            if (codeReader) {
+                codeReader.decodeFromVideoDevice(undefined, 'interactive-video', (result, err) => {
+                    if (result) {
+                        const scannedText = result.getText();
+                        stopScanner();
+                        if (activeScannerTarget === 'input') {
+                            document.getElementById('scan-input').value = scannedText;
+                            processScannedValue(scannedText);
+                        } else if (activeScannerTarget === 'search') {
+                            document.getElementById('search-filter-input').value = scannedText;
+                            renderRecords();
+                        } else if (activeScannerTarget === 'locationSearch') {
+                            document.getElementById('location-search-input').value = scannedText;
+                            renderRecords();
+                        }
+                    }
+                }).catch(err => {
+                    console.error('Camera scan error:', err);
+                });
+            }
+        }
+
+        function stopScanner() {
+            if (codeReader) {
+                codeReader.reset();
+            }
+            document.getElementById('scanner-modal').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
+```
+eof
